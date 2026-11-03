@@ -53,3 +53,7 @@ ubuntu*.log
 .mrs/
 # local agent data
 .workbuddy/
+
+# MounRiver/Eclipse project files are required to build the example
+!Slot2_Example/**/.project
+!Slot2_Example/**/.cproject
