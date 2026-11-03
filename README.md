@@ -177,4 +177,3 @@ when the target firmware is running.
 - Other devices on the same USB controller can interrupt a capture — drop to 8 ch @ 200 MHz or 16 ch @ 100 MHz.
 - The input level must match the signal actually applied; a wrong setting misplaces the
   threshold and real highs read as low.
-- Use the buffer board for single-ended signals to reduce ringing.
