@@ -147,6 +147,16 @@ pyocd gdbserver --frequency 8000000 --port 3333
 With OpenOCD use `interface/cmsis-dap.cfg` and `transport select swd`; use connect-under-reset
 when the target firmware is running.
 
+**Keil MDK 5.36** cannot open CMSIS-DAP v2 probes — its bundled driver is too old for them, and
+µVision shows no debugger. ARM fixed it in a later MDK release; either fix below works on its own:
+
+| Fix | How |
+|---|---|
+| Replace the DLLs | Back up the Keil install's `ARM\BIN`, overwrite `CMSIS_DAP.dll`, `CMSIS_AGDI.dll` and `CMSIS_AGDI_V8M.dll` with the copies in `Firmware/dll_fix_keil.zip`, then restart µVision. |
+| Update slot 1 | Flash `Firmware/SLOT1_CH32H417_USB2UART_DAP_APP_fix_keil5.36.bin`. The only visible difference is the USB product string, now `WeAct Studio CMSIS-DAP` — `pyocd list` and the device manager show that name too. |
+
+Then pick **CMSIS-DAP Debugger** and Port **SW** in the project options.
+
 ## Downloads
 
 | Software | Purpose | Download |
@@ -165,7 +175,7 @@ when the target firmware is running.
 ## Layout
 
 ```
-├── Firmware/       # firmware images
+├── Firmware/       # firmware images + the Keil 5.36 DLL fix
 ├── Slot2_Example/  # slot 2 example app (SDK)
 ├── Images/         # product images
 └── Doc/            # usage guide
