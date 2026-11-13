@@ -24,7 +24,7 @@ Three apps on one board, switched with the key.
 |---|---|
 | Channels | 16 (D0–D15), configurable as 2 / 4 / 8 / 16 |
 | Sample rate | USB 3.0: 4–200 MHz; USB 2.0: 4–20 MHz @ 16 ch, 4–40 MHz @ 8 ch |
-| Capture length | From 10 ms up; the ceiling is PC memory: about 45 s at 200 MHz / 16 ch, 90 s at 8 ch |
+| Capture length | From 10 ms up; capped by PC memory, calculated from an 18 GB data ceiling: about 45 s at 200 MHz / 16 ch, 90 s at 8 ch |
 | Input level | 1.0–3.3 V adjustable, threshold 0.6–1.5 V |
 | Protocol decoders | 132 (UART / I²C / SPI / CAN and more) |
 | Power / interface | USB 3.0 Type-C, Vin 5 V |
