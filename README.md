@@ -171,12 +171,14 @@ Then pick **CMSIS-DAP Debugger** and Port **SW** in the project options.
 |---|---|
 | [U3LogicAnalyzer usage](Doc/usage.md) | Full user guide |
 | [使用说明](Doc/usage.zh_CN.md) | Chinese version |
+| [3D model (STEP)](Hardware/WeAct-LogicAnalyzerV2_v10%203D.step) | Mechanical model, open with a CAD tool |
 
 ## Layout
 
 ```
 ├── Firmware/       # firmware images + the Keil 5.36 DLL fix
 ├── Slot2_Example/  # slot 2 example app (SDK)
+├── Hardware/       # 3D model (STEP)
 ├── Images/         # product images
 └── Doc/            # usage guide
 ```

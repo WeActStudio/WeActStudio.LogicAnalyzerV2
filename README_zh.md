@@ -168,12 +168,14 @@ connect-under-reset 才能连上。
 | ---------------------------------------- | ------ |
 | [U3LogicAnalyzer 使用说明](Doc/usage.zh_CN.md) | 完整使用手册 |
 | [U3LogicAnalyzer Usage](Doc/usage.md)      | 英文版    |
+| [3D 模型（STEP）](Hardware/WeAct-LogicAnalyzerV2_v10%203D.step) | 结构模型，可用 CAD 软件打开 |
 
 ## 目录
 
 ```
 ├── Firmware/       # 固件镜像 + Keil 5.36 的 dll 修复包
 ├── Slot2_Example/  # 槽 2 示例工程（SDK）
+├── Hardware/       # 3D 模型（STEP）
 ├── Images/         # 产品图
 └── Doc/            # 使用说明
 ```
