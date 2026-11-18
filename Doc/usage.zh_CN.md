@@ -26,7 +26,7 @@
 - **多台设备**：下拉列表按端口列出每一台设备；每行右侧提供「在新会话中打开」，可为每台设备各开一个会话并同时采集。
 - **插拔**：拔掉正在采集的设备后，该页面显示离线遮罩，无法启动采集；重新插入后自动恢复。采集期间其他设备的插拔不影响正在采集的这台设备。
 
-Windows 上默认使用 CH375DLL 驱动。如需改用 libusb 后端（或使用 FX2 方案的设备），需先用 Zadig 将设备重新绑定到 WinUSB，详见 U3LogicAnalyzer 仓库的 README。
+Windows 上默认使用 CH375DLL 驱动。固件版本 0.2（上位机 `0xAC` 应答中 `sw=0x02`）起，设备自带 Microsoft OS 描述符，未安装 CH375 驱动的电脑会自动绑定 WinUSB，无需手动改绑。已安装 CH375 驱动的电脑仍走 CH375DLL，两者无需切换。使用更早版本的固件或 FX2 方案的设备时，仍需用 Zadig 改绑 WinUSB，详见 U3LogicAnalyzer 仓库的 README。
 
 ## 设备选项
 
@@ -41,6 +41,8 @@ Windows 上默认使用 CH375DLL 驱动。如需改用 libusb 后端（或使用
 | 预触发 | 采集窗口中留给触发前的比例（0–100%），详见「采集」一节 |
 | 通道数 | 2 / 4 / 8 / 16 路。**8 通道**时每个采样点只占 1 字节，同样内存可存双倍采样点 |
 | 通道 | 勾选参与采集的通道（仅影响显示与解码，数据仍按通道数打包） |
+| 使用设备按键开始/停止采集 | 勾选后可用设备上的 KEY 短按开始、再短按停止采集；长按两秒切换固件槽。需固件 0.2 与上位机 0.2.0.0 及以上 |
+| 指示灯亮度 | 暗 / 默认 / 较亮 / 亮 / 最亮五档，默认「默认」。需固件 0.2 与上位机 0.2.0.0 及以上 |
 
 输入电平设置错误会使阈值落在错误位置：设置偏高时正常的高电平被判为低电平，设置偏低时噪声被判为高电平。
 
@@ -123,10 +125,118 @@ Windows 上默认使用 CH375DLL 驱动。如需改用 libusb 后端（或使用
 - 页面显示写入进度，完成后自动重连并重新读取设备信息。
 - 升级期间不要拔线；中途失败可以重试，设备仍在 IAP 模式时再次升级即可。
 
+## Agent 配置
+
+安装程序附带两个命令行组件，安装时勾选后才会装入，二者均位于安装目录下。默认目录为 `C:\Program Files\WeAct Studio\U3LogicAnalyzer`，安装时可以更改，下文以 `<安装目录>` 表示实际路径。
+
+| 组件 | 作用 |
+|---|---|
+| `sigrok-cli.exe` | sigrok 命令行前端，设备扫描、采集与协议解码均由其完成 |
+| `sigrok-mcp-server.exe` | 将常用操作封装为工具供 Agent 调用，内部调用 `sigrok-cli` |
+
+> **MCP 并非必需。** 扫描、采集与解码用 `sigrok-cli` 一条命令即可完成；`sigrok-mcp-server` 只是把这些操作封装成工具，供支持 MCP 的客户端调用。安装时只勾选 sigrok-cli，下文命令行用法照常可用。
+
+### 直接调用 sigrok-cli
+
+Agent 只要能执行命令即可使用，无需额外配置；在终端中手动执行也是同样的命令。
+
+按名称调用 `sigrok-cli` 要求安装目录已在 PATH 中。添加方法：系统属性 → 高级 → 环境变量 → 用户变量 `Path`，新增一项，值为实际安装目录（默认 `C:\Program Files\WeAct Studio\U3LogicAnalyzer`）。
+
+不改 PATH 也可以，用完整路径调用。路径含空格，PowerShell 中需使用调用运算符 `&` 并加引号：
+
+```powershell
+& "C:\Program Files\WeAct Studio\U3LogicAnalyzer\sigrok-cli.exe" --scan
+```
+
+下文命令同理，把行首的 `sigrok-cli` 换成上述完整路径写法，路径按实际安装目录填写。
+
+```bash
+sigrok-cli --scan
+sigrok-cli -d wch-ch32h417 -c samplerate=4m --samples 2000 -o capture.sr
+sigrok-cli -i capture.sr -P uart:rx=D0:baudrate=115200 -A uart=rx-data
+```
+
+| 参数 | 说明 |
+|---|---|
+| `--scan` | 列出设备，返回驱动标识与连接串，形如 `wch-ch32h417:conn=ch375/4-2`（CH375DLL）或 `wch-ch32h417-libusb:conn=usb/2-2.3`（libusb）。端口随 USB 接口变化，更换接口后需重新扫描 |
+| `-d` | 指定驱动，标识以 `--scan` 的结果为准：CH375DLL 后端为 `wch-ch32h417`，libusb 后端为 `wch-ch32h417-libusb`；与实际绑定的驱动不符时报 `No devices found.`。接入多台同型号设备时，可用完整连接串指定其中一台 |
+| `-c` | 设置采样率，取值须为该驱动支持的档位（4 MHz 至 200 MHz 共 25 档，可用 `--show` 查询）；档位之外的值会报 `Failed to set device option 'samplerate': invalid argument.` |
+| `--samples`、`--time` | 前者指定采样点数，后者按毫秒指定采集时长 |
+| `-o` | 写出 sigrok 会话文件（`.sr`，zip 容器），与软件「保存」生成的格式相同，可直接打开 |
+| `-P`、`-A` | 前者指定解码器及其参数，后者指定要显示的注解 |
+
+扫描结果中另有一台 `demo` 设备，为 sigrok 内置的演示驱动，不对应实际硬件。
+
+命令行可直接交给 Agent 执行，前提是客户端允许执行命令。不必写全命令，说明要做什么即可：
+
+- 「列出当前连接的逻辑分析仪。」
+- 「用 50 MHz 采集 1 s，保存到 `D:\cap\uart.sr`。」
+- 「把 `uart.sr` 按 UART 解码，RX 接 D0，波特率 115200，输出结果。」
+
+第三条会由 Agent 拼成 `sigrok-cli -i uart.sr -P uart:rx=D0:baudrate=115200 -A uart=rx-data`。解码器有哪些通道与参数，可用 `--show` 查询，也可由 Agent 自行核对。这种方式不受 `SIGROK_TIMEOUT_SECONDS` 约束，超时取决于客户端的命令执行时限；代价是出错时须自行查看 stderr 原文。
+
+### 通过 MCP 服务器调用
+
+服务器把上述操作封装为工具，客户端按同一套格式登记：给出可执行文件、启动参数与环境变量，其中 `command` 指向 `sigrok-mcp-server.exe`，`env` 指明 `sigrok-cli` 的位置。下例中的 `<安装目录>` 需替换为实际路径，JSON 中的反斜杠写作 `\\`：
+
+```json
+{
+  "mcpServers": {
+    "sigrok": {
+      "command": "<安装目录>\\sigrok-mcp-server.exe",
+      "args": [],
+      "env": {
+        "SIGROK_CLI_PATH": "<安装目录>\\sigrok-cli.exe",
+        "SIGROK_TIMEOUT_SECONDS": "600",
+        "SIGROK_WORKING_DIR": "<安装目录>\\workdir"
+      }
+    }
+  }
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `command` | `sigrok-mcp-server.exe` 的完整路径 |
+| `args` | 启动参数，此处为空 |
+| `SIGROK_CLI_PATH` | `sigrok-cli.exe` 的完整路径。服务器通过它调用 sigrok，因此不必把安装目录加入 PATH |
+| `SIGROK_TIMEOUT_SECONDS` | 单次操作的超时时间（秒），采集时间较长时可增大 |
+| `SIGROK_WORKING_DIR` | 存放采集数据等临时文件的工作目录，需事先创建（上例为安装目录下的 `workdir`） |
+
+> 未设置 `SIGROK_CLI_PATH` 时，服务器改为通过 PATH 查找 `sigrok-cli`；两处都找不到时，工具返回
+> `sigrok-cli execution failed: exec: "sigrok-cli": executable file not found in %PATH%`。
+
+- `mcpServers` 及 `command`、`args`、`env` 三个键是 MCP 的通用约定；个别客户端顶层键名不同（如 VS Code 使用 `servers`），`disabled` 等附加键按客户端文档填写。
+- 配置文件位置：WorkBuddy 为 `%USERPROFILE%\.workbuddy\mcp.json`，保存后需在「连接器 → 自定义连接器」中点「信任」；Claude Desktop 为 `%APPDATA%\Claude\claude_desktop_config.json`；Cursor 为 `%USERPROFILE%\.cursor\mcp.json`；其他客户端见其文档。文件不存在则新建，已存在则将条目合并进 `mcpServers`，不要覆盖其他条目；保存后重启客户端。
+
+配置生效后，在对话框中直接描述需求即可，无需记住工具名。建议按下列顺序上手：
+
+1. **确认设备**：说「列出当前连接的逻辑分析仪」，返回的列表中应出现型号与端口，如 `CH32H417 WeAct Studio Logic Analyzer V2 with 16 channels: D0 … D15`。
+2. **短采一次**：说「用 4 MHz 采集 2000 个点，保存为 test.sr」。4 MHz 下 2000 点只有 0.5 ms，用于验证链路；文件默认落在 `SIGROK_WORKING_DIR`，成功后返回写入的文件名，如 `{"file":"test.sr"}`。
+3. **正式采集与解码**：说「以 50 MHz 采集 1 s，保存到 `D:\cap\uart.sr`」，或「把 `uart.sr` 按 UART 解码，RX 接 D0，波特率 115200」。解码结果以文本返回。
+
+两点注意：
+
+- 采样率按档位说明（4 MHz、8 MHz、20 MHz 等）；档位之外的值（如 1 MHz）会失败，可让 Agent 先查询驱动支持的档位。
+- 采集得到的 `.sr` 文件可直接拖入软件窗口查看。
+
+`sigrok-mcp-server` 提供给 Agent 的工具如下，仅在配置 MCP 后存在。「对应命令行」一列说明每个工具实际执行的动作，便于与前述命令对照，或在失败时定位出错的步骤。
+
+| 工具 | 对应命令行 | 用途 |
+|---|---|---|
+| `scan_devices` | `--scan` | 扫描设备，返回驱动标识与连接串 |
+| `list_supported_hardware`、`show_driver_details` | `-L`、`--show` | 列出驱动，或查看某一驱动的选项与采样率档位 |
+| `capture_data` | `-d`、`-c`、`--samples`/`--time`、`-o` | 采集并写入文件 |
+| `decode_protocol` | `-i`、`-P`、`-A` | 解码已采集的文件 |
+| `list_supported_decoders`、`show_decoder_details` | `-L`、`--show` | 列出解码器，或查看其通道与选项 |
+| `list_input_formats`、`list_output_formats` | `-L` | 列出可读写的数据格式 |
+| `check_firmware_status`、`show_version` | `-V` | 检查固件文件是否就位，查看组件版本 |
+| `get_device_profile`、`serial_query` | — | 用于串口与 SCPI 设备，逻辑分析仪一般用不到 |
+
 ## 常见问题
 
 **设备列表中没有设备**
-- Windows：确认设备未被其他程序占用；使用 libusb 后端时需先用 Zadig 重新绑定 WinUSB。
+- Windows：确认设备未被其他程序占用；固件 0.2 之前的版本或 FX2 方案的设备，需先用 Zadig 重新绑定 WinUSB。
 - Linux：`lsusb` 能看到设备但软件中没有，属于权限问题，执行 `sudo ./install_udev_rules.sh` 后重新插拔。
 
 **采集启动后立即停止、采样数为 0**

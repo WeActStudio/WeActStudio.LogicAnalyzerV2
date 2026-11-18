@@ -26,7 +26,7 @@ The application scans for devices as soon as one is plugged in, and the device s
 - **Several devices**: the list holds one row per port. Each row offers "open in a new session", so every device can capture into a session of its own at the same time.
 - **Hot plug**: unplugging a capturing device leaves that page behind an offline mask, and no capture can be started there until the device is reconnected. Plugging or unplugging other devices during a capture does not affect the device being captured.
 
-On Windows the CH375DLL driver is the default. To use the libusb back end instead (or an FX2-based analyzer), rebind the device to WinUSB with Zadig first; see the README of the U3LogicAnalyzer repository.
+On Windows the CH375DLL driver is the default. From firmware version 0.2 (`sw=0x02` in the `0xAC` reply), the device carries a Microsoft OS descriptor, so a computer without the CH375 driver binds WinUSB automatically and no manual rebinding is needed. On a computer with the CH375 driver already installed, CH375DLL is still used and no change is necessary. Earlier firmware and FX2-based analyzers still need a WinUSB rebind with Zadig; see the README of the U3LogicAnalyzer repository.
 
 ## Device options
 
@@ -41,6 +41,8 @@ The device options button (gear icon) on the tool bar opens the device options p
 | Pre-trigger | Share of the capture window reserved for the time before the trigger (0–100%); see Capturing |
 | Channel count | 2 / 4 / 8 / 16 channels. **With 8 channels** each sample takes one byte, so the same memory holds twice as many samples |
 | Channel boxes | Channels that take part in the capture (affects display and decoding only; the data is still packed by channel count) |
+| Use the board key to start/stop capture | When selected, short-press KEY to start and stop capture; a two-second press still switches firmware slots. Requires firmware 0.2 and U3LogicAnalyzer 0.2.0.0 or newer |
+| Indicator brightness | Dim / Default / Bright / Brighter / Maximum, with Default selected initially. Requires firmware 0.2 and U3LogicAnalyzer 0.2.0.0 or newer |
 
 A wrong input level places the threshold incorrectly: set too high, genuine highs read as low; set too low, noise reads as high.
 
@@ -123,10 +125,118 @@ Help menu → **FW Update**.
 - Progress is shown on the page; the device reconnects and is read again when the update finishes.
 - Do not unplug the device during the write. A failed update can be retried while the device is still in IAP mode.
 
+## Agent configuration
+
+The installer ships two command-line components, installed only when selected; both reside in the installation directory. The default is `C:\Program Files\WeAct Studio\U3LogicAnalyzer` and can be changed during setup; `<INSTALL_DIR>` below stands for the actual path.
+
+| Component | Purpose |
+|---|---|
+| `sigrok-cli.exe` | The sigrok command-line front end, which performs device scanning, capture and protocol decoding |
+| `sigrok-mcp-server.exe` | Wraps the common operations as tools for an agent and calls `sigrok-cli` internally |
+
+> **MCP is not required.** Scanning, capture and decoding each take a single `sigrok-cli` command; `sigrok-mcp-server` only wraps those operations as tools for clients that support MCP. With sigrok-cli alone selected during installation, the command-line usage below still applies.
+
+### Calling sigrok-cli directly
+
+An agent only needs the ability to run commands; no further configuration is involved, and the same commands can be run by hand in a terminal.
+
+Calling `sigrok-cli` by name requires the installation directory on PATH. To add it, open System Properties → Advanced → Environment Variables, edit the user variable `Path`, and add the actual installation directory (default `C:\Program Files\WeAct Studio\U3LogicAnalyzer`).
+
+PATH can be left alone and the full path used instead. It contains spaces, so PowerShell needs the call operator `&` together with quotes:
+
+```powershell
+& "C:\Program Files\WeAct Studio\U3LogicAnalyzer\sigrok-cli.exe" --scan
+```
+
+The commands below follow the same pattern: replace the leading `sigrok-cli` with that full-path form, using the actual installation directory.
+
+```bash
+sigrok-cli --scan
+sigrok-cli -d wch-ch32h417 -c samplerate=4m --samples 2000 -o capture.sr
+sigrok-cli -i capture.sr -P uart:rx=D0:baudrate=115200 -A uart=rx-data
+```
+
+| Option | Description |
+|---|---|
+| `--scan` | Lists the devices and returns a driver identifier with a connection string, e.g. `wch-ch32h417:conn=ch375/4-2` (CH375DLL) or `wch-ch32h417-libusb:conn=usb/2-2.3` (libusb); the port follows the USB port, so the scan has to be repeated after the device is moved |
+| `-d` | Selects the driver; take the identifier from `--scan`: `wch-ch32h417` for the CH375DLL backend and `wch-ch32h417-libusb` for the libusb one, while a mismatch reports `No devices found.` With several devices of the same model connected, the full connection string addresses one of them |
+| `-c` | Sets the sample rate, which must be one of the rates supported by the driver (25 steps from 4 MHz to 200 MHz, listed by `--show`); any other value reports `Failed to set device option 'samplerate': invalid argument.` |
+| `--samples`, `--time` | The former sets the number of samples, the latter a capture duration in milliseconds |
+| `-o` | Writes a sigrok session file (`.sr`, a zip container) in the same format as the Save command of the application, which can be opened directly |
+| `-P`, `-A` | The former selects the decoders and their options, the latter the annotations to display |
+
+The scan also lists a `demo` device, the built-in demonstration driver of sigrok that corresponds to no hardware.
+
+Hand the commands above to the agent, provided the client is allowed to execute commands. The command does not have to be written out in full; describing the task is enough:
+
+- "List the connected logic analyzers."
+- "Capture 1 s at 50 MHz and save it to `D:\cap\uart.sr`."
+- "Decode `uart.sr` as UART with RX on D0 at 115200 baud, and paste the result."
+
+The agent turns the third request into a command such as `sigrok-cli -i uart.sr -P uart:rx=D0:baudrate=115200 -A uart=rx-data`; the channels and options of a decoder can be looked up with `--show`, or the agent can check them itself. This route is not bound by `SIGROK_TIMEOUT_SECONDS`; the limit is whatever the client allows a command to run, and a failure has to be diagnosed from the stderr text.
+
+### Calling through the MCP server
+
+The server wraps the operations above as tools, and clients register it in the same shape: an executable, its arguments and its environment, with `command` pointing at `sigrok-mcp-server.exe` and `env` giving the location of `sigrok-cli`. Replace `<INSTALL_DIR>` with the actual path, and note that backslashes in JSON are written as `\\`:
+
+```json
+{
+  "mcpServers": {
+    "sigrok": {
+      "command": "<INSTALL_DIR>\\sigrok-mcp-server.exe",
+      "args": [],
+      "env": {
+        "SIGROK_CLI_PATH": "<INSTALL_DIR>\\sigrok-cli.exe",
+        "SIGROK_TIMEOUT_SECONDS": "600",
+        "SIGROK_WORKING_DIR": "<INSTALL_DIR>\\workdir"
+      }
+    }
+  }
+}
+```
+
+| Field | Description |
+|---|---|
+| `command` | Full path of `sigrok-mcp-server.exe` |
+| `args` | Startup arguments; empty here |
+| `SIGROK_CLI_PATH` | Full path of `sigrok-cli.exe`. The server calls sigrok through it, so the installation directory does not have to be added to PATH |
+| `SIGROK_TIMEOUT_SECONDS` | Timeout of a single operation in seconds; increase it for long captures |
+| `SIGROK_WORKING_DIR` | Working directory for temporary files such as captured data; it must be created in advance (the `workdir` folder of the installation directory in the example) |
+
+> When `SIGROK_CLI_PATH` is not set, the server falls back to looking up `sigrok-cli` through PATH; if neither resolves, the tools return
+> `sigrok-cli execution failed: exec: "sigrok-cli": executable file not found in %PATH%`.
+
+- The `mcpServers` object together with the `command`, `args` and `env` keys is the common MCP convention; a few clients name the top-level key differently (VS Code uses `servers`), and additional keys such as `disabled` follow the documentation of the client.
+- The configuration file location depends on the client: WorkBuddy uses `%USERPROFILE%\.workbuddy\mcp.json` and requires the server to be trusted under Connectors → Custom connectors; Claude Desktop uses `%APPDATA%\Claude\claude_desktop_config.json`; Cursor uses `%USERPROFILE%\.cursor\mcp.json`; other clients follow their own documentation. Create the file if it does not exist, merge the entry into `mcpServers` if it does, and restart the client afterwards.
+
+Once the configuration is in place, describe the task in the conversation; the tool names do not have to be remembered. The following order is a reasonable start:
+
+1. **Check the device**: ask to list the connected logic analyzers. The result should include the model and port, e.g. `CH32H417 WeAct Studio Logic Analyzer V2 with 16 channels: D0 … D15`.
+2. **Capture a short run**: ask for 2000 samples at 4 MHz, saved as `test.sr`. At 4 MHz that is 0.5 ms of data and only serves to prove the link; the file lands in `SIGROK_WORKING_DIR` by default, and a successful capture returns its name, e.g. `{"file":"test.sr"}`.
+3. **Capture and decode for real**: ask for 1 s at 50 MHz saved to `D:\cap\uart.sr`, or for `uart.sr` to be decoded as UART with RX on D0 at 115200 baud. The decoded result is returned as text.
+
+Two points to keep in mind:
+
+- Give the sample rate as one of the supported steps (4 MHz, 8 MHz, 20 MHz and so on); a rate outside that list, 1 MHz for instance, fails, so the agent may have to look up the steps of the driver first.
+- The resulting `.sr` file can be dragged into the application window for viewing.
+
+The tools that `sigrok-mcp-server` exposes to the agent are listed below; they exist only once MCP is configured. The "Command-line equivalent" column shows what each tool actually runs, which helps when comparing it with the commands above or locating the step that failed.
+
+| Tool | Command-line equivalent | Purpose |
+|---|---|---|
+| `scan_devices` | `--scan` | Scans the devices and returns the driver identifier and connection string |
+| `list_supported_hardware`, `show_driver_details` | `-L`, `--show` | Lists the drivers, or shows the options and sample rates of one driver |
+| `capture_data` | `-d`, `-c`, `--samples`/`--time`, `-o` | Captures data to a file |
+| `decode_protocol` | `-i`, `-P`, `-A` | Decodes a captured file |
+| `list_supported_decoders`, `show_decoder_details` | `-L`, `--show` | Lists the decoders, or shows the channels and options of one |
+| `list_input_formats`, `list_output_formats` | `-L` | Lists the supported data formats |
+| `check_firmware_status`, `show_version` | `-V` | Checks that the firmware files are in place, and reports the component versions |
+| `get_device_profile`, `serial_query` | — | Intended for serial and SCPI devices; rarely needed with the analyzer |
+
 ## Troubleshooting
 
 **The device is not in the device list**
-- Windows: make sure no other program holds the device; the libusb back end requires a WinUSB rebind with Zadig first.
+- Windows: make sure no other program holds the device; firmware older than 0.2 and FX2-based devices need a WinUSB rebind with Zadig first.
 - Linux: `lsusb` lists the device but the application does not. This is a permission problem: run `sudo ./install_udev_rules.sh` and reconnect the device.
 
 **The capture stops at once with 0 samples**
