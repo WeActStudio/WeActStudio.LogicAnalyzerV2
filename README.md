@@ -37,6 +37,8 @@
 
 Firmware update: **Help → FW Update**.
 
+Windows uses the CH375 driver by default. To use WinUSB instead, uninstall the device in Device Manager with "Delete the driver software for this device" checked, then replug: firmware 0.2 binds WinUSB automatically. Older firmware still needs a Zadig rebind.
+
 ## Pinout
 
 | Terminal | MCU pin | Logic analyzer | USB-serial + DAP |
@@ -73,7 +75,7 @@ On-board signals:
 
 | Running app | Short press | Hold 2 s, then release |
 |---|---|---|
-| Logic analyzer | — | Switches to the next slot: USB-serial + DAP |
+| Logic analyzer | Start / stop capture (after enabling in device options) | Switches to the next slot: USB-serial + DAP |
 | USB-serial + DAP | Switches the IO level: 3.3 → 2.5 → 1.8 → 1.2 V | Switches to the next slot: Your own app |
 | Your own app | Same as above | Switches to the next slot: Logic analyzer |
 | IAP | Advances one slot, written immediately | — |
@@ -87,7 +89,7 @@ On-board signals:
 
 ## LED
 
-A single WS2812 (PC2) reports every state through colour; it is kept dim deliberately:
+A single WS2812 (PC2) reports every state through colour. Brightness has five levels — dim, default, bright, brighter, maximum — set in the host software:
 
 | State | Display |
 |---|---|
